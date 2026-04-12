@@ -1,7 +1,10 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect, url_for
+import sqlite3
+from werkzeug.security import generate_password_hash
 from database.db import get_db, init_db, seed_db
 
 app = Flask(__name__)
+app.secret_key = "dev-secret-change-in-prod"  # TODO: replace with env var in production
 
 with app.app_context():
     init_db()
@@ -17,9 +20,36 @@ def landing():
     return render_template("landing.html")
 
 
-@app.route("/register")
+@app.route("/register", methods=["GET", "POST"])
 def register():
-    return render_template("register.html")
+    if request.method == "GET":
+        return render_template("register.html")
+
+    # --- POST: process registration ---
+    name     = request.form.get("name", "").strip()
+    email    = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+
+    if not name:
+        return render_template("register.html", error="Full name is required.")
+    if not email:
+        return render_template("register.html", error="Email address is required.")
+    if len(password) < 8:
+        return render_template("register.html", error="Password must be at least 8 characters.")
+
+    password_hash = generate_password_hash(password)
+    try:
+        db = get_db()
+        db.execute(
+            "INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)",
+            (name, email, password_hash),
+        )
+        db.commit()
+        db.close()
+    except sqlite3.IntegrityError:
+        return render_template("register.html", error="That email is already registered.")
+
+    return redirect(url_for("login"))
 
 
 @app.route("/login")
